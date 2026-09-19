@@ -8,6 +8,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- PeerJS para conexión directa sin servidor backend -->
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 </head>
 <body>
 
@@ -21,9 +24,15 @@
       </button>
     </div>
 
-    <div class="title-container text-center">
+    <!-- Título solo visible en el Menú Principal -->
+    <div id="header-title" class="title-container text-center">
       <h1>Familia Castro López <span class="heart">♡</span></h1>
       <p class="subtitle">¡Juntos siempre es mejor! ♡</p>
+    </div>
+
+    <!-- Badge de Conexión en la Barra Superior (pantalla del juego) -->
+    <div id="header-remote-status" class="header-status-badge hidden">
+      📱 Control: <span id="header-connected-code" class="code-connected">----</span> (Conectado)
     </div>
 
     <div class="header-right">
@@ -56,15 +65,23 @@
   <div id="main-menu" class="menu-container">
     <div class="menu-card">
       <div class="menu-image-wrapper">
-        <img src="Img/papitos.jpg" alt="Gran Bingo Familia Castro López" class="menu-banner-img" onerror="this.src='https://via.placeholder.com/260x320?text=Castro+L%C3%B3pez+Bingo'">
+        <img src="Img/fondo.jpg" alt="Gran Bingo Familia Castro López" class="menu-banner-img" onerror="this.src='https://via.placeholder.com/260x320?text=Castro+L%C3%B3pez+Bingo'">
       </div>
 
       <h2>Gran Bingo Castro López</h2>
       <p>Selecciona una opción para comenzar a jugar</p>
 
+      <!-- Badge de Estado de Conexión Remota -->
+      <div id="room-code-badge" class="room-badge hidden">
+        📱 Código para Celular: <span id="display-room-code" class="code-highlight">----</span>
+      </div>
+
       <div class="menu-actions">
         <button id="btn-menu-play" class="btn btn-green btn-large">
-          ▶ Jugar Bingo
+          ▶ Jugar Bingo (Laptop)
+        </button>
+        <button id="btn-menu-remote" class="btn btn-blue btn-large">
+          📱 Control Remoto (Celular)
         </button>
         <button id="btn-menu-rules" class="btn btn-purple btn-large">
           📖 Instrucciones
@@ -183,7 +200,101 @@
 
   </div>
 
-  <!-- Modal Reinicio -->
+  <!-- VISTA 3: VISTA EXCLUSIVA CELULAR (CONTROL REMOTO) -->
+  <div id="remote-control-view" class="remote-container hidden">
+    <div class="remote-header">
+      <h2>📱 Control Remoto</h2>
+      <p id="remote-status" class="status-connecting">Conectado a Laptop: <span id="remote-connected-code" class="code-connected">----</span></p>
+    </div>
+
+    <div class="remote-grid">
+      <button id="remote-btn-start" class="btn btn-green btn-remote">
+        ▶ INICIAR
+      </button>
+      <button id="remote-btn-pause" class="btn btn-blue btn-remote">
+        ⏸ PARAR
+      </button>
+
+      <button id="remote-btn-speed" class="btn btn-purple btn-remote">
+        ⚡ VELOCIDAD
+      </button>
+      <button id="remote-btn-recount" class="btn btn-blue btn-remote">
+        📢 RECUENTO
+      </button>
+
+      <div class="remote-line-selectors">
+        <button id="remote-btn-l1" class="btn btn-line-remote">L1</button>
+        <button id="remote-btn-l2" class="btn btn-line-remote">L2</button>
+        <button id="remote-btn-l3" class="btn btn-line-remote">L3</button>
+      </div>
+
+      <button id="remote-btn-reset" class="btn btn-red btn-remote btn-full">
+        🔄 REINICIAR JUEGO
+      </button>
+
+      <button id="remote-btn-bingo" class="btn btn-bingo btn-remote btn-full disabled" disabled>
+        🎉 ¡BINGO!
+      </button>
+    </div>
+
+    <!-- Cartilla Muestra agregada al Control Remoto -->
+    <div class="sample-ticket-container" style="margin-top: 10px;">
+      <div id="remote-sample-ticket" class="sample-ticket">
+        <!-- Fila 1 -->
+        <div class="ticket-cell blank"></div>
+        <div class="ticket-cell">18</div>
+        <div class="ticket-cell">24</div>
+        <div class="ticket-cell blank"></div>
+        <div class="ticket-cell blank"></div>
+        <div class="ticket-cell">54</div>
+        <div class="ticket-cell">67</div>
+        <div class="ticket-cell blank"></div>
+        <div class="ticket-cell">80</div>
+
+        <!-- Fila 2 -->
+        <div class="ticket-cell blank"></div>
+        <div class="ticket-cell blank"></div>
+        <div class="ticket-cell">26</div>
+        <div class="ticket-cell blank"></div>
+        <div class="ticket-cell">41</div>
+        <div class="ticket-cell">55</div>
+        <div class="ticket-cell blank"></div>
+        <div class="ticket-cell">70</div>
+        <div class="ticket-cell">87</div>
+
+        <!-- Fila 3 -->
+        <div class="ticket-cell">4</div>
+        <div class="ticket-cell blank"></div>
+        <div class="ticket-cell blank"></div>
+        <div class="ticket-cell">39</div>
+        <div class="ticket-cell">42</div>
+        <div class="ticket-cell blank"></div>
+        <div class="ticket-cell">69</div>
+        <div class="ticket-cell">72</div>
+        <div class="ticket-cell blank"></div>
+
+        <!-- Línea negra indicadora para el remoto -->
+        <div id="remote-ticket-strike-line" class="ticket-strike-line hidden"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Conectar Control Remoto -->
+  <div id="modal-connect-remote" class="modal-overlay hidden">
+    <div class="modal-card">
+      <div class="modal-icon">📱</div>
+      <h2>Conectar Celular</h2>
+      <p>Ingresa el código de 4 dígitos que aparece en la pantalla de la laptop:</p>
+      <input type="text" id="input-room-code" class="remote-code-input" placeholder="Ej: 4821" maxlength="4">
+      <div id="connect-error" class="error-msg hidden">Código inválido o no encontrado</div>
+      <div class="modal-buttons" style="margin-top: 15px;">
+        <button id="btn-submit-connect" class="btn btn-green" style="width: 50%;">Conectar</button>
+        <button id="btn-cancel-connect" class="btn btn-gray" style="width: 50%;">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Reinicio (Se abre al presionar reiniciar desde la Laptop o desde el Celular) -->
   <div id="modal-overlay" class="modal-overlay hidden">
     <div class="modal-card">
       <div class="modal-icon">🔄</div>
@@ -205,7 +316,8 @@
          2. Ajusta la velocidad con el botón ⚡.<br>
          3. Usa <b>Recuento</b> para cantar los números de menor a mayor.<br>
          4. Usa <b>L1, L2, L3</b> para indicar la línea que se está jugando.<br>
-         5. El botón <b>¡BINGO!</b> se activará tras salir 15 números.</p>
+         5. El botón <b>¡BINGO!</b> se activará tras salir 15 números.<br>
+         6. ¡Usa el botón <b>📱 Control Remoto</b> para manejar todo desde tu celular!</p>
       <div class="modal-buttons">
         <button id="btn-close-rules" class="btn btn-blue" style="width:100%">Entendido</button>
       </div>

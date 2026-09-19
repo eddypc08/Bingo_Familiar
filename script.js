@@ -1,4 +1,4 @@
-// === CONFIGURA AQUÍ EL NOMBRE DE TU ARCHIVO DE MÚSICA DE FONDO ===
+// CONFIGURACIÓN DE ARCHIVOS
 const RUTA_MUSICA_FONDO = 'Sound/musica_fondo.mp3';
 
 // Configuración del Juego
@@ -21,16 +21,26 @@ let velocidadIdx = 0;
 let enRecuento = false;
 let lineaSeleccionada = null; // 'L1', 'L2', 'L3'
 
+// PeerJS Control Remoto
+let peer = null;
+let peerConn = null;
+let roomCode = null;
+let isRemoteController = false;
+
 // Audio de Fondo
 let bgMusic = null;
 let bgMuted = false;
 
-// Elementos del DOM
+// Elementos DOM Principales
 const mainMenu = document.getElementById('main-menu');
 const gameView = document.getElementById('game-view');
+const remoteControlView = document.getElementById('remote-control-view');
+const headerTitle = document.getElementById('header-title');
+
 const board = document.getElementById('board');
 const numberDisplay = document.getElementById('number-display');
 const drawnHistory = document.getElementById('drawn-history');
+
 const btnStart = document.getElementById('btn-start');
 const startText = document.getElementById('start-text');
 const btnPause = document.getElementById('btn-pause');
@@ -45,6 +55,7 @@ const btnL1 = document.getElementById('btn-l1');
 const btnL2 = document.getElementById('btn-l2');
 const btnL3 = document.getElementById('btn-l3');
 const ticketStrikeLine = document.getElementById('ticket-strike-line');
+const remoteTicketStrikeLine = document.getElementById('remote-ticket-strike-line');
 
 const btnMuteBgm = document.getElementById('btn-mute-bgm');
 const iconSoundOn = document.getElementById('icon-sound-on');
@@ -56,9 +67,34 @@ const btnConfirmNo = document.getElementById('btn-confirm-no');
 
 const modalRules = document.getElementById('modal-rules');
 const btnMenuPlay = document.getElementById('btn-menu-play');
+const btnMenuRemote = document.getElementById('btn-menu-remote');
 const btnMenuRules = document.getElementById('btn-menu-rules');
 const btnCloseRules = document.getElementById('btn-close-rules');
 const bingoOverlay = document.getElementById('bingo-overlay');
+
+// Elementos Conexión Remota
+const roomCodeBadge = document.getElementById('room-code-badge');
+const displayRoomCode = document.getElementById('display-room-code');
+const modalConnectRemote = document.getElementById('modal-connect-remote');
+const inputRoomCode = document.getElementById('input-room-code');
+const connectError = document.getElementById('connect-error');
+const btnSubmitConnect = document.getElementById('btn-submit-connect');
+const btnCancelConnect = document.getElementById('btn-cancel-connect');
+
+const headerRemoteStatus = document.getElementById('header-remote-status');
+const headerConnectedCode = document.getElementById('header-connected-code');
+const remoteConnectedCode = document.getElementById('remote-connected-code');
+
+// Botones del Control Remoto
+const remoteBtnStart = document.getElementById('remote-btn-start');
+const remoteBtnPause = document.getElementById('remote-btn-pause');
+const remoteBtnSpeed = document.getElementById('remote-btn-speed');
+const remoteBtnRecount = document.getElementById('remote-btn-recount');
+const remoteBtnReset = document.getElementById('remote-btn-reset');
+const remoteBtnBingo = document.getElementById('remote-btn-bingo');
+const remoteBtnL1 = document.getElementById('remote-btn-l1');
+const remoteBtnL2 = document.getElementById('remote-btn-l2');
+const remoteBtnL3 = document.getElementById('remote-btn-l3');
 
 // Inicialización
 function init() {
@@ -66,16 +102,115 @@ function init() {
   resetearJuego();
   inicializarMusicaFondo();
   configurarEventos();
+  inicializarHostPeer();
 }
 
-// Inicializar Audio de Fondo
+// Genera un código simple de 4 dígitos para conectar
+function generarCodigoSala() {
+  return Math.floor(1000 + Math.random() * 9000).toString();
+}
+
+// Inicializar PeerJS en la Laptop (Servidor/Host)
+function inicializarHostPeer() {
+  roomCode = generarCodigoSala();
+  const peerId = `castro-lopez-bingo-${roomCode}`;
+  peer = new Peer(peerId);
+
+  peer.on('open', (id) => {
+    displayRoomCode.textContent = roomCode;
+    roomCodeBadge.classList.remove('hidden');
+  });
+
+  peer.on('connection', (conn) => {
+    peerConn = conn;
+    
+    // Notificar conexión exitosa en la pantalla del juego
+    headerConnectedCode.textContent = roomCode;
+    headerRemoteStatus.classList.remove('hidden');
+
+    peerConn.on('data', (data) => {
+      procesarComandoRemoto(data);
+    });
+
+    peerConn.on('close', () => {
+      headerRemoteStatus.classList.add('hidden');
+    });
+  });
+
+  peer.on('error', (err) => {
+    if (err.type === 'unavailable-id') {
+      inicializarHostPeer();
+    }
+  });
+}
+
+// Conectar desde el Celular al Host de la Laptop
+function conectarControlRemoto(codigoIngresado) {
+  const targetPeerId = `castro-lopez-bingo-${codigoIngresado}`;
+  peer = new Peer();
+
+  peer.on('open', () => {
+    peerConn = peer.connect(targetPeerId);
+
+    peerConn.on('open', () => {
+      isRemoteController = true;
+      remoteConnectedCode.textContent = codigoIngresado;
+      modalConnectRemote.classList.add('hidden');
+      mainMenu.classList.add('hidden');
+      remoteControlView.classList.remove('hidden');
+    });
+
+    peerConn.on('data', (data) => {
+      if (data.cmd === 'SYNC_LINE') {
+        aplicarUISeleccionarLinea(data.payload);
+      }
+    });
+
+    peerConn.on('error', () => {
+      connectError.classList.remove('hidden');
+    });
+  });
+
+  peer.on('error', () => {
+    connectError.classList.remove('hidden');
+  });
+}
+
+// Enviar comandos del celular a la laptop
+function enviarComando(cmd, payload = null) {
+  if (peerConn && peerConn.open) {
+    peerConn.send({ cmd, payload });
+  }
+}
+
+// Procesar en la Laptop los comandos recibidos desde el Celular
+function procesarComandoRemoto(data) {
+  switch (data.cmd) {
+    case 'START': iniciarJuego(); break;
+    case 'PAUSE': pararJuego(true); break;
+    case 'SPEED': btnSpeed.click(); break;
+    case 'RECOUNT': ejecutarRecuento(); break;
+    case 'L1': seleccionarLinea('L1'); break;
+    case 'L2': seleccionarLinea('L2'); break;
+    case 'L3': seleccionarLinea('L3'); break;
+    case 'RESET': modalReset.classList.remove('hidden'); break;
+    case 'CONFIRM_RESET': resetearJuego(); break;
+    case 'BINGO': 
+      if (sorteados.length >= MINIMO_NUMEROS_BINGO) {
+        btnBingo.click();
+      }
+      break;
+  }
+}
+
+// Inicializar Audio
 function inicializarMusicaFondo() {
   bgMusic = new Audio(RUTA_MUSICA_FONDO);
   bgMusic.loop = true;
   bgMusic.volume = 0.1;
 }
 
-// Reproducir sonido de clic para botones
+// Reproducir sonido táctil
 function reproducirSonidoBoton() {
   try {
     const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -99,7 +234,6 @@ function reproducirSonidoBoton() {
   } catch (e) {}
 }
 
-// Alternar Silencio de la Música de Fondo
 function toggleMuteBgMusic() {
   bgMuted = !bgMuted;
   if (bgMusic) bgMusic.muted = bgMuted;
@@ -113,7 +247,6 @@ function toggleMuteBgMusic() {
   }
 }
 
-// Crear celdas del tablero (1 al 90)
 function crearTablero() {
   board.innerHTML = '';
   for (let i = 1; i <= TOTAL_NUMEROS; i++) {
@@ -125,7 +258,6 @@ function crearTablero() {
   }
 }
 
-// Resetear variables y vista
 function resetearJuego() {
   pararJuego(false);
   disponibles = Array.from({ length: TOTAL_NUMEROS }, (_, i) => i + 1);
@@ -143,13 +275,12 @@ function resetearJuego() {
   actualizarEstadoBingo();
 }
 
-// Sacar un número aleatorio
 function extraerNumero() {
   if (!jugando) return;
 
   if (disponibles.length === 0) {
     pararJuego(false);
-    cantarTexto("¡Fin del juego! Salieron todos los numeros.");
+    cantarTexto("¡Fin del juego! Salieron todos los números.");
     return;
   }
 
@@ -162,7 +293,6 @@ function extraerNumero() {
   actualizarEstadoBingo();
 }
 
-// Mostrar número extraído en el tablero e historial
 function mostrarNumero(num) {
   numberDisplay.textContent = num;
 
@@ -172,7 +302,6 @@ function mostrarNumero(num) {
   actualizarHistorial();
 }
 
-// Actualizar últimas balotas en pantalla
 function actualizarHistorial() {
   drawnHistory.innerHTML = '';
   const ultimos = sorteados.slice(-15).reverse();
@@ -184,24 +313,37 @@ function actualizarHistorial() {
   });
 }
 
-// Habilitar o deshabilitar botón BINGO (Mínimo 15 números)
 function actualizarEstadoBingo() {
-  if (!btnBingo) return;
+  const listo = sorteados.length >= MINIMO_NUMEROS_BINGO;
 
-  if (sorteados.length >= MINIMO_NUMEROS_BINGO) {
-    btnBingo.disabled = false;
-    btnBingo.classList.remove('disabled');
-    btnBingo.title = "¡Presiona si hay ganador!";
-  } else {
-    btnBingo.disabled = true;
-    btnBingo.classList.add('disabled');
-    btnBingo.title = `Faltan ${MINIMO_NUMEROS_BINGO - sorteados.length} números para activar BINGO`;
+  if (btnBingo) {
+    btnBingo.disabled = !listo;
+    if (listo) {
+      btnBingo.classList.remove('disabled');
+      btnBingo.title = "¡Presiona si hay ganador!";
+    } else {
+      btnBingo.classList.add('disabled');
+      btnBingo.title = `Faltan ${MINIMO_NUMEROS_BINGO - sorteados.length} números para activar BINGO`;
+    }
+  }
+
+  if (remoteBtnBingo) {
+    remoteBtnBingo.disabled = !listo;
+    if (listo) {
+      remoteBtnBingo.classList.remove('disabled');
+    } else {
+      remoteBtnBingo.classList.add('disabled');
+    }
   }
 }
 
-// Iniciar/Reanudar extracción
 function iniciarJuego() {
   if (jugando || enRecuento) return;
+
+  if (!lineaSeleccionada) {
+    cantarTexto("Seleccione una línea para iniciar el juego");
+    return;
+  }
 
   limpiarTemporizadores();
 
@@ -214,10 +356,11 @@ function iniciarJuego() {
   startText.textContent = 'Jugando...';
 
   if (esInicioNuevo) {
-    const mensajeInicio = "Prepárense familia, el juego empieza en 3, 2, 1... ¡A jugar!";
+    const nombreLinea = lineaSeleccionada === 'L1' ? 'la línea de arriba' : (lineaSeleccionada === 'L2' ? 'la línea del medio' : 'la línea de abajo');
+    const mensajeInicio = `¿Listo familia? vamos a jugar ${nombreLinea}`;
     cantarTexto(mensajeInicio);
     
-    const tiempoEspera = Math.max(6500, mensajeInicio.length * 100);
+    const tiempoEspera = Math.max(5000, mensajeInicio.length * 90);
 
     timeoutInicio = setTimeout(() => {
       if (jugando) {
@@ -242,19 +385,11 @@ function iniciarJuego() {
   }
 }
 
-// Limpiar temporizadores
 function limpiarTemporizadores() {
-  if (intervalo) {
-    clearInterval(intervalo);
-    intervalo = null;
-  }
-  if (timeoutInicio) {
-    clearTimeout(timeoutInicio);
-    timeoutInicio = null;
-  }
+  if (intervalo) { clearInterval(intervalo); intervalo = null; }
+  if (timeoutInicio) { clearTimeout(timeoutInicio); timeoutInicio = null; }
 }
 
-// Parar extracción de forma inmediata
 function pararJuego(anunciar = true) {
   const estabaJugando = jugando;
   jugando = false;
@@ -272,7 +407,6 @@ function pararJuego(anunciar = true) {
   }
 }
 
-// RECUENTO: De menor a mayor
 function ejecutarRecuento() {
   if (sorteados.length === 0) return;
 
@@ -302,38 +436,70 @@ function ejecutarRecuento() {
   }, 2000);
 }
 
-// Selección de Líneas (L1, L2, L3)
 function seleccionarLinea(linea) {
   if (lineaSeleccionada === linea) {
     desactivarLinea();
+    enviarComando('SYNC_LINE', null);
     return;
   }
 
   lineaSeleccionada = linea;
-  
-  [btnL1, btnL2, btnL3].forEach(btn => btn.classList.remove('active'));
-  ticketStrikeLine.classList.remove('hidden', 'line-1', 'line-2', 'line-3');
+  aplicarUISeleccionarLinea(linea);
+
+  if (!isRemoteController) {
+    enviarComando('SYNC_LINE', linea);
+  }
+}
+
+function aplicarUISeleccionarLinea(linea) {
+  lineaSeleccionada = linea;
+
+  [btnL1, btnL2, btnL3, remoteBtnL1, remoteBtnL2, remoteBtnL3].forEach(btn => btn?.classList.remove('active'));
+
+  if (ticketStrikeLine) {
+    ticketStrikeLine.classList.remove('hidden', 'line-1', 'line-2', 'line-3');
+  }
+  if (remoteTicketStrikeLine) {
+    remoteTicketStrikeLine.classList.remove('hidden', 'line-1', 'line-2', 'line-3');
+  }
+
+  if (!linea) {
+    desactivarLinea();
+    return;
+  }
 
   if (linea === 'L1') {
-    btnL1.classList.add('active');
-    ticketStrikeLine.classList.add('line-1');
+    btnL1?.classList.add('active');
+    remoteBtnL1?.classList.add('active');
+    ticketStrikeLine?.classList.add('line-1');
+    remoteTicketStrikeLine?.classList.add('line-1');
   } else if (linea === 'L2') {
-    btnL2.classList.add('active');
-    ticketStrikeLine.classList.add('line-2');
+    btnL2?.classList.add('active');
+    remoteBtnL2?.classList.add('active');
+    ticketStrikeLine?.classList.add('line-2');
+    remoteTicketStrikeLine?.classList.add('line-2');
   } else if (linea === 'L3') {
-    btnL3.classList.add('active');
-    ticketStrikeLine.classList.add('line-3');
+    btnL3?.classList.add('active');
+    remoteBtnL3?.classList.add('active');
+    ticketStrikeLine?.classList.add('line-3');
+    remoteTicketStrikeLine?.classList.add('line-3');
   }
 }
 
 function desactivarLinea() {
   lineaSeleccionada = null;
-  [btnL1, btnL2, btnL3].forEach(btn => btn.classList.remove('active'));
-  ticketStrikeLine.classList.add('hidden');
-  ticketStrikeLine.classList.remove('line-1', 'line-2', 'line-3');
+  [btnL1, btnL2, btnL3, remoteBtnL1, remoteBtnL2, remoteBtnL3].forEach(btn => btn?.classList.remove('active'));
+
+  if (ticketStrikeLine) {
+    ticketStrikeLine.classList.add('hidden');
+    ticketStrikeLine.classList.remove('line-1', 'line-2', 'line-3');
+  }
+  if (remoteTicketStrikeLine) {
+    remoteTicketStrikeLine.classList.add('hidden');
+    remoteTicketStrikeLine.classList.remove('line-1', 'line-2', 'line-3');
+  }
 }
 
-// Síntesis de voz
 function cantarTexto(texto) {
   if ('speechSynthesis' in window) {
     window.speechSynthesis.cancel();
@@ -344,22 +510,19 @@ function cantarTexto(texto) {
   }
 }
 
-// Configuración de botones y eventos
 function configurarEventos() {
   const todosLosBotones = document.querySelectorAll('button');
-  todosLosBotones.forEach(btn => {
-    btn.addEventListener('click', reproducirSonidoBoton);
-  });
+  todosLosBotones.forEach(btn => btn.addEventListener('click', reproducirSonidoBoton));
 
   btnMuteBgm.addEventListener('click', toggleMuteBgMusic);
 
+  // Botones Locales
   btnStart.addEventListener('click', iniciarJuego);
   btnPause.addEventListener('click', () => pararJuego(true));
 
   btnSpeed.addEventListener('click', () => {
     velocidadIdx = (velocidadIdx + 1) % VELOCIDADES.length;
     speedText.textContent = VELOCIDADES[velocidadIdx].texto;
-    
     if (jugando) {
       if (intervalo) clearInterval(intervalo);
       intervalo = setInterval(extraerNumero, VELOCIDADES[velocidadIdx].ms);
@@ -368,25 +531,21 @@ function configurarEventos() {
 
   btnRecount.addEventListener('click', ejecutarRecuento);
 
-  // Botones L1, L2, L3
   btnL1.addEventListener('click', () => seleccionarLinea('L1'));
   btnL2.addEventListener('click', () => seleccionarLinea('L2'));
   btnL3.addEventListener('click', () => seleccionarLinea('L3'));
 
-  btnReset.addEventListener('click', () => {
-    modalReset.classList.remove('hidden');
-  });
-
+  btnReset.addEventListener('click', () => modalReset.classList.remove('hidden'));
   btnConfirmYes.addEventListener('click', () => {
     modalReset.classList.add('hidden');
-    resetearJuego();
+    if (isRemoteController) {
+      enviarComando('CONFIRM_RESET');
+    } else {
+      resetearJuego();
+    }
   });
+  btnConfirmNo.addEventListener('click', () => modalReset.classList.add('hidden'));
 
-  btnConfirmNo.addEventListener('click', () => {
-    modalReset.classList.add('hidden');
-  });
-
-  // Eventos para Botón BINGO
   if (btnBingo) {
     btnBingo.addEventListener('click', () => {
       if (sorteados.length < MINIMO_NUMEROS_BINGO) return;
@@ -397,32 +556,64 @@ function configurarEventos() {
   }
 
   if (bingoOverlay) {
-    bingoOverlay.addEventListener('click', () => {
-      bingoOverlay.classList.add('hidden');
-    });
+    bingoOverlay.addEventListener('click', () => bingoOverlay.classList.add('hidden'));
   }
 
-  // Navegación Menú - Juego
+  // Navegación de Menú
   btnMenuPlay.addEventListener('click', () => {
     mainMenu.classList.add('hidden');
+    headerTitle.classList.add('hidden');
     gameView.classList.remove('hidden');
+  });
+
+  btnMenuRemote.addEventListener('click', () => {
+    connectError.classList.add('hidden');
+    inputRoomCode.value = '';
+    modalConnectRemote.classList.remove('hidden');
+  });
+
+  btnSubmitConnect.addEventListener('click', () => {
+    const val = inputRoomCode.value.trim();
+    if (val.length === 4) {
+      conectarControlRemoto(val);
+    } else {
+      connectError.classList.remove('hidden');
+    }
+  });
+
+  btnCancelConnect.addEventListener('click', () => {
+    modalConnectRemote.classList.add('hidden');
   });
 
   btnHome.addEventListener('click', () => {
     pararJuego(false);
     gameView.classList.add('hidden');
+    remoteControlView.classList.add('hidden');
+    headerTitle.classList.remove('hidden');
     mainMenu.classList.remove('hidden');
   });
 
-  btnMenuRules.addEventListener('click', () => {
-    modalRules.classList.remove('hidden');
-  });
+  btnMenuRules.addEventListener('click', () => modalRules.classList.remove('hidden'));
+  btnCloseRules.addEventListener('click', () => modalRules.classList.add('hidden'));
 
-  btnCloseRules.addEventListener('click', () => {
-    modalRules.classList.add('hidden');
+  // Eventos de Botones del Control Remoto (Celular)
+  remoteBtnStart.addEventListener('click', () => enviarComando('START'));
+  remoteBtnPause.addEventListener('click', () => enviarComando('PAUSE'));
+  remoteBtnSpeed.addEventListener('click', () => enviarComando('SPEED'));
+  remoteBtnRecount.addEventListener('click', () => enviarComando('RECOUNT'));
+  remoteBtnL1.addEventListener('click', () => enviarComando('L1'));
+  remoteBtnL2.addEventListener('click', () => enviarComando('L2'));
+  remoteBtnL3.addEventListener('click', () => enviarComando('L3'));
+  remoteBtnReset.addEventListener('click', () => {
+    if (isRemoteController) {
+      modalReset.classList.remove('hidden');
+    } else {
+      enviarComando('RESET');
+    }
   });
+  remoteBtnBingo.addEventListener('click', () => enviarComando('BINGO'));
 
-document.addEventListener('keydown', (e) => {
+  document.addEventListener('keydown', (e) => {
     if (e.code === 'Space' && e.target.tagName !== 'BUTTON' && e.target.tagName !== 'INPUT') {
       e.preventDefault();
       if (jugando) {
@@ -432,8 +623,6 @@ document.addEventListener('keydown', (e) => {
       }
     }
   });
-
 }
 
-// Cargar al iniciar
 document.addEventListener('DOMContentLoaded', init);
